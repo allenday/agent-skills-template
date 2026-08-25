@@ -27,7 +27,20 @@ def write_repo(root: Path, *, name="sample-skill", description=None):
     (root / "skills" / name / "references").mkdir(parents=True)
     (root / "evals").mkdir()
     (root / ".codex-plugin/plugin.json").write_text(json.dumps({
-        "name": "fixture", "version": "0.1.0", "description": "fixture", "skills": "./skills/"
+        "name": "fixture",
+        "version": "0.1.0",
+        "description": "fixture",
+        "skills": "./skills/",
+        "author": {"name": "Template Maintainers"},
+        "interface": {
+            "displayName": "Fixture",
+            "shortDescription": "Validate a fixture.",
+            "longDescription": "A neutral fixture used by validator tests.",
+            "developerName": "Template Maintainers",
+            "category": "Productivity",
+            "capabilities": ["skills"],
+            "defaultPrompt": ["Help me validate this fixture."],
+        },
     }))
     (root / ".agents/plugins/marketplace.json").write_text(json.dumps({
         "name": "fixture",
@@ -85,6 +98,17 @@ class ValidatorTests(unittest.TestCase):
             self.assertIn("REFERENCE_MISSING", codes)
             self.assertIn("REFERENCE_ESCAPES_SKILL", codes)
 
+    def test_escaping_local_image_reference_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_repo(root)
+            skill = root / "skills/sample-skill/SKILL.md"
+            skill.write_text(skill.read_text() + "\n![Escape](../../outside.png)\n")
+
+            codes = {finding.code for finding in self.validator.validate(root)}
+
+            self.assertIn("REFERENCE_ESCAPES_SKILL", codes)
+
     def test_invalid_marketplace_source_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -120,6 +144,19 @@ class ValidatorTests(unittest.TestCase):
 
             self.assertIn("SKILL_DIRECTORY_SYMLINK", codes)
 
+    def test_symlinked_skills_root_is_rejected_before_walking(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_repo(root)
+            skills_dir = root / "skills"
+            relocated = root / "relocated-skills"
+            skills_dir.rename(relocated)
+            skills_dir.symlink_to(relocated, target_is_directory=True)
+
+            codes = {finding.code for finding in self.validator.validate(root)}
+
+            self.assertIn("SKILLS_ROOT_SYMLINK", codes)
+
     def test_symlinked_skill_file_and_asset_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -140,21 +177,39 @@ class ValidatorTests(unittest.TestCase):
             self.assertIn("SKILL_ASSET_SYMLINK", codes)
             self.assertIn("SKILL_ASSET_ESCAPES", codes)
 
+    def test_symlinked_nested_asset_named_skill_md_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_repo(root)
+            nested_skill_file = root / "skills/sample-skill/references/SKILL.md"
+            nested_skill_file.symlink_to(root / "outside.md")
+            (root / "outside.md").write_text("outside\n")
+
+            codes = {finding.code for finding in self.validator.validate(root)}
+
+            self.assertIn("SKILL_ASSET_SYMLINK", codes)
+            self.assertIn("SKILL_ASSET_ESCAPES", codes)
+
     def test_manifest_and_marketplace_required_metadata_fail_with_stable_codes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             write_repo(root)
             manifest_path = root / ".codex-plugin/plugin.json"
             manifest_path.write_text(json.dumps({
-                "name": "Bad_Name", "version": " ", "description": "\t", "skills": "skills",
+                "name": "Bad_Name", "version": "1.0", "description": "\t", "skills": "skills",
+                "author": {"name": " "},
+                "interface": {
+                    "displayName": " ", "shortDescription": "", "longDescription": "\t",
+                    "developerName": "\n", "category": " ", "capabilities": [], "defaultPrompt": [""],
+                },
             }))
             marketplace_path = root / ".agents/plugins/marketplace.json"
             marketplace_path.write_text(json.dumps({
-                "name": " ",
+                "name": "Bad_Name",
                 "plugins": [{
                     "name": "Bad_Name",
                     "source": {"source": "github", "path": "not-local"},
-                    "policy": {"installation": " ", "authentication": ""},
+                    "policy": {"installation": "SOMETIMES", "authentication": "LATER"},
                     "category": "\n",
                 }],
             }))
@@ -162,12 +217,17 @@ class ValidatorTests(unittest.TestCase):
             codes = {finding.code for finding in self.validator.validate(root)}
 
             self.assertTrue({
-                "MANIFEST_NAME_INVALID", "MANIFEST_VERSION_MISSING",
+                "MANIFEST_NAME_INVALID", "MANIFEST_VERSION_INVALID",
                 "MANIFEST_DESCRIPTION_MISSING", "MANIFEST_SKILLS_PATH",
-                "MARKETPLACE_NAME_MISSING", "MARKETPLACE_PLUGIN_NAME_INVALID",
+                "MANIFEST_AUTHOR_NAME_MISSING", "MANIFEST_INTERFACE_DISPLAY_NAME_MISSING",
+                "MANIFEST_INTERFACE_SHORT_DESCRIPTION_MISSING",
+                "MANIFEST_INTERFACE_LONG_DESCRIPTION_MISSING",
+                "MANIFEST_INTERFACE_DEVELOPER_NAME_MISSING", "MANIFEST_INTERFACE_CATEGORY_MISSING",
+                "MANIFEST_INTERFACE_CAPABILITIES_INVALID", "MANIFEST_INTERFACE_DEFAULT_PROMPT_INVALID",
+                "MARKETPLACE_NAME_INVALID", "MARKETPLACE_PLUGIN_NAME_INVALID",
                 "MARKETPLACE_SOURCE_PATH",
-                "MARKETPLACE_POLICY_INSTALLATION_MISSING",
-                "MARKETPLACE_POLICY_AUTHENTICATION_MISSING", "MARKETPLACE_CATEGORY_MISSING",
+                "MARKETPLACE_POLICY_INSTALLATION_INVALID",
+                "MARKETPLACE_POLICY_AUTHENTICATION_INVALID", "MARKETPLACE_CATEGORY_MISSING",
             }.issubset(codes))
 
             data = json.loads(marketplace_path.read_text())

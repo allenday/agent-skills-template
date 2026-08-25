@@ -21,6 +21,14 @@ class Finding:
 FRONTMATTER = re.compile(r"\A---\n(?P<body>.*?)\n---(?:\n|\Z)", re.DOTALL)
 LINK = re.compile(r"\[[^\]]+\]\((?P<target>[^)]+)\)")
 NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SEMVER = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\."
+    r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+INSTALLATION_POLICIES = {"NOT_AVAILABLE", "AVAILABLE", "INSTALLED_BY_DEFAULT"}
+AUTHENTICATION_POLICIES = {"ON_INSTALL", "ON_USE"}
 
 
 def parse_frontmatter(text: str) -> dict[str, str]:
@@ -70,8 +78,11 @@ def validate_marketplace(root: Path, manifest: object, findings) -> None:
             add(findings, "error", "MARKETPLACE_INVALID", path, "marketplace must be a JSON object")
         return
 
-    if not is_nonblank_string(marketplace.get("name")):
+    marketplace_name = marketplace.get("name")
+    if not is_nonblank_string(marketplace_name):
         add(findings, "error", "MARKETPLACE_NAME_MISSING", path, "marketplace name must be a nonblank string")
+    elif not NAME.fullmatch(marketplace_name):
+        add(findings, "error", "MARKETPLACE_NAME_INVALID", path, "marketplace name must be kebab-case")
 
     manifest_name = manifest.get("name") if isinstance(manifest, dict) else None
     plugins = marketplace.get("plugins")
@@ -109,10 +120,20 @@ def validate_marketplace(root: Path, manifest: object, findings) -> None:
                 findings, "error", "MARKETPLACE_POLICY_INSTALLATION_MISSING", path,
                 "plugin policy installation must be a nonblank string",
             )
+        elif policy["installation"] not in INSTALLATION_POLICIES:
+            add(
+                findings, "error", "MARKETPLACE_POLICY_INSTALLATION_INVALID", path,
+                "plugin policy installation must be NOT_AVAILABLE, AVAILABLE, or INSTALLED_BY_DEFAULT",
+            )
         if not is_nonblank_string(policy.get("authentication")):
             add(
                 findings, "error", "MARKETPLACE_POLICY_AUTHENTICATION_MISSING", path,
                 "plugin policy authentication must be a nonblank string",
+            )
+        elif policy["authentication"] not in AUTHENTICATION_POLICIES:
+            add(
+                findings, "error", "MARKETPLACE_POLICY_AUTHENTICATION_INVALID", path,
+                "plugin policy authentication must be ON_INSTALL or ON_USE",
             )
     if not is_nonblank_string(plugin.get("category")):
         add(findings, "error", "MARKETPLACE_CATEGORY_MISSING", path, "plugin category must be a nonblank string")
@@ -123,8 +144,6 @@ def validate_skill_assets(skill_dir: Path, findings) -> None:
     for directory, dirs, files in os.walk(skill_dir, followlinks=False):
         for name in dirs + files:
             path = Path(directory) / name
-            if path.name == "SKILL.md":
-                continue
             if path.is_symlink():
                 add(findings, "error", "SKILL_ASSET_SYMLINK", path, "skill assets must not be symlinks")
                 if not is_within(path.resolve(), skill_root):
@@ -163,8 +182,6 @@ def validate_skill(skill_dir: Path, findings) -> str | None:
         add(findings, "warning", "SKILL_TOO_LARGE", skill_path, "SKILL.md exceeds 500 lines")
 
     for match in LINK.finditer(text):
-        if match.start() and text[match.start() - 1] == "!":
-            continue
         target = match.group("target").strip()
         if not target or target.startswith(("http:", "https:", "mailto:", "#")):
             continue
@@ -221,12 +238,46 @@ def validate(root: Path) -> list[Finding]:
     if isinstance(manifest, dict):
         if not isinstance(manifest.get("name"), str) or not NAME.fullmatch(manifest["name"]):
             add(findings, "error", "MANIFEST_NAME_INVALID", manifest_path, "name must be kebab-case")
-        if not is_nonblank_string(manifest.get("version")):
+        version = manifest.get("version")
+        if not is_nonblank_string(version):
             add(findings, "error", "MANIFEST_VERSION_MISSING", manifest_path, "version must be a nonblank string")
+        elif not SEMVER.fullmatch(version):
+            add(findings, "error", "MANIFEST_VERSION_INVALID", manifest_path, "version must be strict semver")
         if not is_nonblank_string(manifest.get("description")):
             add(findings, "error", "MANIFEST_DESCRIPTION_MISSING", manifest_path, "description must be a nonblank string")
         if manifest.get("skills") != "./skills/":
             add(findings, "error", "MANIFEST_SKILLS_PATH", manifest_path, "skills must be './skills/'")
+        author = manifest.get("author")
+        if not isinstance(author, dict):
+            add(findings, "error", "MANIFEST_AUTHOR_INVALID", manifest_path, "author must be an object")
+        elif not is_nonblank_string(author.get("name")):
+            add(findings, "error", "MANIFEST_AUTHOR_NAME_MISSING", manifest_path, "author.name must be a nonblank string")
+        interface = manifest.get("interface")
+        if not isinstance(interface, dict):
+            add(findings, "error", "MANIFEST_INTERFACE_INVALID", manifest_path, "interface must be an object")
+        else:
+            interface_fields = {
+                "displayName": "DISPLAY_NAME",
+                "shortDescription": "SHORT_DESCRIPTION",
+                "longDescription": "LONG_DESCRIPTION",
+                "developerName": "DEVELOPER_NAME",
+                "category": "CATEGORY",
+            }
+            for field, code_name in interface_fields.items():
+                if not is_nonblank_string(interface.get(field)):
+                    add(findings, "error", f"MANIFEST_INTERFACE_{code_name}_MISSING", manifest_path,
+                        f"interface.{field} must be a nonblank string")
+            capabilities = interface.get("capabilities")
+            if not isinstance(capabilities, list) or not capabilities or not all(is_nonblank_string(value) for value in capabilities):
+                add(findings, "error", "MANIFEST_INTERFACE_CAPABILITIES_INVALID", manifest_path,
+                    "interface.capabilities must be a nonempty list of nonblank strings")
+            prompts = [interface[field] for field in ("defaultPrompt", "default_prompt") if field in interface]
+            if not prompts or not all(
+                isinstance(prompt, list) and prompt and all(is_nonblank_string(value) for value in prompt)
+                for prompt in prompts
+            ):
+                add(findings, "error", "MANIFEST_INTERFACE_DEFAULT_PROMPT_INVALID", manifest_path,
+                    "interface.defaultPrompt or interface.default_prompt must be a nonempty list of nonblank strings")
     elif manifest is not None:
         add(findings, "error", "MANIFEST_INVALID", manifest_path, "manifest must be a JSON object")
 
@@ -234,7 +285,9 @@ def validate(root: Path) -> list[Finding]:
 
     skill_names = set()
     skills_dir = root / "skills"
-    if skills_dir.is_dir():
+    if skills_dir.is_symlink():
+        add(findings, "error", "SKILLS_ROOT_SYMLINK", skills_dir, "skills directory must not be a symlink")
+    elif skills_dir.is_dir():
         for skill_dir in sorted(skills_dir.iterdir()):
             if skill_dir.is_symlink():
                 add(findings, "error", "SKILL_DIRECTORY_SYMLINK", skill_dir, "skill directories must not be symlinks")
