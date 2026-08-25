@@ -20,6 +20,9 @@ class Finding:
 
 FRONTMATTER = re.compile(r"\A---\n(?P<body>.*?)\n---(?:\n|\Z)", re.DOTALL)
 LINK = re.compile(r"\[[^\]]+\]\((?P<target>[^)]+)\)")
+REFERENCE_DEFINITION = re.compile(
+    r"(?m)^[ \t]{0,3}\[(?:[^\]\\]|\\.)+\]:[ \t]*(?P<target><[^>\n]*>|[^ \t\n]+)"
+)
 NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SEMVER = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
@@ -150,6 +153,20 @@ def validate_skill_assets(skill_dir: Path, findings) -> None:
                     add(findings, "error", "SKILL_ASSET_ESCAPES", path, "skill asset symlink resolves outside the skill directory")
 
 
+def validate_reference(target: str, skill_path: Path, skill_dir: Path, findings) -> None:
+    target = target.strip()
+    if not target or target.startswith(("http:", "https:", "mailto:", "#")):
+        return
+    target_path = target.split("#", 1)[0].split("?", 1)[0].strip("<>")
+    if not target_path:
+        return
+    candidate = (skill_path.parent / target_path).resolve()
+    if not is_within(candidate, skill_dir.resolve()):
+        add(findings, "error", "REFERENCE_ESCAPES_SKILL", skill_path, f"reference escapes skill: {target}")
+    elif not candidate.is_file():
+        add(findings, "error", "REFERENCE_MISSING", skill_path, f"reference is missing: {target}")
+
+
 def validate_skill(skill_dir: Path, findings) -> str | None:
     skill_path = skill_dir / "SKILL.md"
     validate_skill_assets(skill_dir, findings)
@@ -182,17 +199,9 @@ def validate_skill(skill_dir: Path, findings) -> str | None:
         add(findings, "warning", "SKILL_TOO_LARGE", skill_path, "SKILL.md exceeds 500 lines")
 
     for match in LINK.finditer(text):
-        target = match.group("target").strip()
-        if not target or target.startswith(("http:", "https:", "mailto:", "#")):
-            continue
-        target_path = target.split("#", 1)[0].split("?", 1)[0].strip("<>")
-        if not target_path:
-            continue
-        candidate = (skill_path.parent / target_path).resolve()
-        if not is_within(candidate, skill_dir.resolve()):
-            add(findings, "error", "REFERENCE_ESCAPES_SKILL", skill_path, f"reference escapes skill: {target}")
-        elif not candidate.is_file():
-            add(findings, "error", "REFERENCE_MISSING", skill_path, f"reference is missing: {target}")
+        validate_reference(match.group("target"), skill_path, skill_dir, findings)
+    for match in REFERENCE_DEFINITION.finditer(text):
+        validate_reference(match.group("target"), skill_path, skill_dir, findings)
     return name if NAME.fullmatch(name) and name == skill_dir.name else None
 
 

@@ -109,6 +109,33 @@ class ValidatorTests(unittest.TestCase):
 
             self.assertIn("REFERENCE_ESCAPES_SKILL", codes)
 
+    def test_escaping_reference_style_links_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_repo(root)
+            skill = root / "skills/sample-skill/SKILL.md"
+            skill.write_text(
+                skill.read_text()
+                + "\n![Escape][outside]\n[Escape text][outside-text]\n"
+                + "[Guide][online]\n[Contact][email]\n[Section][anchor]\n"
+                + "[outside]: ../../outside.png\n"
+                + "[outside-text]: ../../outside.md\n"
+                + "[online]: https://example.com/guide\n"
+                + "[email]: mailto:guide@example.com\n"
+                + "[anchor]: #section\n"
+            )
+
+            messages = {
+                finding.message
+                for finding in self.validator.validate(root)
+                if finding.code == "REFERENCE_ESCAPES_SKILL"
+            }
+
+            self.assertEqual(messages, {
+                "reference escapes skill: ../../outside.png",
+                "reference escapes skill: ../../outside.md",
+            })
+
     def test_invalid_marketplace_source_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
