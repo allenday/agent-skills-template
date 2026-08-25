@@ -10,6 +10,9 @@ GitHub's native template mechanism will create derived repositories with indepen
 
 ```text
 agent-skills-template/
+├── .agents/
+│   └── plugins/
+│       └── marketplace.json
 ├── .codex-plugin/
 │   └── plugin.json
 ├── .github/
@@ -53,7 +56,7 @@ The repository will provide dependency-free commands:
 
 Validation will check:
 
-- Plugin manifest structure and skill discovery.
+- Plugin manifest, repo marketplace structure, and skill discovery.
 - Required `SKILL.md` frontmatter.
 - Skill name and directory consistency.
 - Nonempty, bounded, trigger-oriented descriptions.
@@ -67,7 +70,7 @@ The validator will report all findings in one run, use stable error codes, and e
 
 ## Codex plugin packaging
 
-The template is a skills-only plugin. `.codex-plugin/plugin.json` points to the root `skills/` directory. Derived repositories can be installed as a complete plugin while retaining the option to copy or publish individual skill directories.
+The template is a skills-only plugin. `.codex-plugin/plugin.json` points to the root `skills/` directory, and `.agents/plugins/marketplace.json` exposes the root plugin as a native repository marketplace. Derived repositories can be installed as a complete plugin while retaining the option to copy or publish individual skill directories.
 
 The initial version will not include an MCP server, hooks, UI, or external tool dependencies. Those capabilities can be added later without changing the skill layout.
 
