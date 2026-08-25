@@ -16,13 +16,30 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
    python3 -m unittest discover -s tests -v
    ```
 
-7. Add the GitHub repository as a marketplace:
+7. Add the repository as a Codex plugin marketplace. Choose the source form that matches how Codex can read the repository:
 
    ```sh
-   codex plugin marketplace add owner/repo --ref main
+   # GitHub shorthand (recommended for GitHub repositories)
+   codex plugin marketplace add OWNER/REPOSITORY --ref main
+
+   # Explicit HTTPS Git URL
+   codex plugin marketplace add https://github.com/OWNER/REPOSITORY.git --ref main
+
+   # Explicit SSH Git URL
+   codex plugin marketplace add git@github.com:OWNER/REPOSITORY.git --ref main
+
+   # A repository already available on this machine
+   codex plugin marketplace add /absolute/path/to/REPOSITORY
+
    ```
 
-8. Start a fresh Codex session and install the plugin from `/plugins`.
+   For a private repository, use a source form whose GitHub credentials are authorized to read it. The shorthand is GitHub-specific; use an HTTPS or SSH Git URL for another Git host.
+
+8. Confirm that Codex can see the marketplace, then install its plugin from `/plugins` in a fresh Codex session:
+
+   ```sh
+   codex plugin marketplace list
+   ```
 
 Generated repositories have independent histories and do not receive template updates automatically. Bring over later improvements deliberately, after reviewing them for your repository.
 

@@ -42,8 +42,16 @@ class RepositoryContractTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         self.assertIn("scripts/new-skill", readme)
         self.assertIn("scripts/validate", readme)
-        self.assertIn("codex plugin marketplace add", readme)
         self.assertIn("Use this template", readme)
+        for source in (
+            "codex plugin marketplace add OWNER/REPOSITORY --ref main",
+            "codex plugin marketplace add https://github.com/OWNER/REPOSITORY.git --ref main",
+            "codex plugin marketplace add git@github.com:OWNER/REPOSITORY.git --ref main",
+            "codex plugin marketplace add /absolute/path/to/REPOSITORY",
+            "codex plugin marketplace list",
+        ):
+            with self.subTest(source=source):
+                self.assertIn(source, readme)
 
     def test_governance_files_exist(self):
         for path in ("AGENTS.md", "CONTRIBUTING.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
