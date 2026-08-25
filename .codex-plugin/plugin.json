@@ -1,0 +1,6 @@
+{
+  "name": "agent-skills-template",
+  "version": "0.1.0",
+  "description": "A forkable monorepo template for portable Agent Skills",
+  "skills": "./skills/"
+}
