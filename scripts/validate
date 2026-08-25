@@ -23,6 +23,10 @@ LINK = re.compile(r"\[[^\]]+\]\((?P<target>[^)]+)\)")
 REFERENCE_DEFINITION = re.compile(
     r"(?m)^[ \t]{0,3}\[(?:[^\]\\]|\\.)+\]:[ \t]*(?P<target><[^>\n]*>|[^ \t\n]+)"
 )
+REMOTE_URL = re.compile(r"(?i)(?:https?:|mailto:)[^\s<>()\[\]\"']*")
+LOCAL_PORTABILITY_ESCAPE = re.compile(
+    r"(?i)file:|\.\./|(?<![A-Za-z0-9._/-])/(?![ /\n])"
+)
 NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SEMVER = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
@@ -197,6 +201,16 @@ def validate_skill(skill_dir: Path, findings) -> str | None:
             add(findings, "error", "SKILL_DESCRIPTION_TRIGGER", skill_path, "description must include 'Use when'")
     if len(text.splitlines()) > 500:
         add(findings, "warning", "SKILL_TOO_LARGE", skill_path, "SKILL.md exceeds 500 lines")
+
+    portable_text = REMOTE_URL.sub("", text)
+    for match in LOCAL_PORTABILITY_ESCAPE.finditer(portable_text):
+        add(
+            findings,
+            "error",
+            "SKILL_MARKDOWN_PORTABILITY_ESCAPE",
+            skill_path,
+            f"skill Markdown contains a non-portable local reference pattern: {match.group()}",
+        )
 
     for match in LINK.finditer(text):
         validate_reference(match.group("target"), skill_path, skill_dir, findings)
