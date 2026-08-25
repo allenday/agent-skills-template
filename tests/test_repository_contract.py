@@ -53,6 +53,8 @@ class RepositoryContractTests(unittest.TestCase):
             "codex plugin add YOUR-PLUGIN@YOUR-PLUGIN",
             "codex plugin remove YOUR-PLUGIN@YOUR-PLUGIN",
             "codex plugin marketplace remove YOUR-PLUGIN",
+            "does not upload the plugin to ChatGPT or the ChatGPT Plugin Directory",
+            "Codex selects and applies matching skills automatically",
         ):
             with self.subTest(source=source):
                 self.assertIn(source, readme)

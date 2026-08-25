@@ -51,6 +51,8 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
 
    Start a fresh Codex session after installing the plugin so it can discover the skills.
 
+   The GitHub marketplace installs the plugin only into the Codex environment where you ran the commands. It does not upload the plugin to ChatGPT or the ChatGPT Plugin Directory. In a new Codex session, ask for a task that matches a skill; Codex selects and applies matching skills automatically.
+
 9. To remove the plugin later, remove the installed plugin first, then the marketplace source:
 
    ```sh
