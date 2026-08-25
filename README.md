@@ -5,7 +5,13 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
 ## Create your repository
 
 1. On GitHub, select **Use this template** to generate a new repository.
-2. Update the names and display copy in `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`.
+2. Before you publish or install a generated repository, replace the template identity with your plugin name. Use lower-case hyphen-case, such as `acme-agent-skills`, and set the same value in all three places:
+
+   - `.codex-plugin/plugin.json` → `name`
+   - `.agents/plugins/marketplace.json` → top-level `name`
+   - `.agents/plugins/marketplace.json` → `plugins[0].name`
+
+   Also replace the display names and descriptions in those files. Do not install a generated repository while any of these identifiers remains `agent-skills-template`; otherwise Codex will install it under the template name.
 3. Remove `example-skill` and `evals/example-skill.json`, or use them as the pattern for your first skill.
 4. Create a skill with `scripts/new-skill <name>`.
 5. Replace the generated skill description and eval prompts with domain-specific triggers.
@@ -35,10 +41,21 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
 
    For a private repository, use a source form whose GitHub credentials are authorized to read it. The shorthand is GitHub-specific; use an HTTPS or SSH Git URL for another Git host.
 
-8. Confirm that Codex can see the marketplace, then install its plugin from `/plugins` in a fresh Codex session:
+8. Confirm that Codex can see the marketplace, then install the plugin. This example assumes you used the same identifier for the marketplace and plugin in step 2:
 
    ```sh
    codex plugin marketplace list
+   codex plugin list --marketplace YOUR-PLUGIN
+   codex plugin add YOUR-PLUGIN@YOUR-PLUGIN
+   ```
+
+   Start a fresh Codex session after installing the plugin so it can discover the skills.
+
+9. To remove the plugin later, remove the installed plugin first, then the marketplace source:
+
+   ```sh
+   codex plugin remove YOUR-PLUGIN@YOUR-PLUGIN
+   codex plugin marketplace remove YOUR-PLUGIN
    ```
 
 Generated repositories have independent histories and do not receive template updates automatically. Bring over later improvements deliberately, after reviewing them for your repository.

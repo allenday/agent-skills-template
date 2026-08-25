@@ -43,12 +43,16 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("scripts/new-skill", readme)
         self.assertIn("scripts/validate", readme)
         self.assertIn("Use this template", readme)
+        self.assertIn("Before you publish or install a generated repository", readme)
         for source in (
             "codex plugin marketplace add OWNER/REPOSITORY --ref main",
             "codex plugin marketplace add https://github.com/OWNER/REPOSITORY.git --ref main",
             "codex plugin marketplace add git@github.com:OWNER/REPOSITORY.git --ref main",
             "codex plugin marketplace add /absolute/path/to/REPOSITORY",
             "codex plugin marketplace list",
+            "codex plugin add YOUR-PLUGIN@YOUR-PLUGIN",
+            "codex plugin remove YOUR-PLUGIN@YOUR-PLUGIN",
+            "codex plugin marketplace remove YOUR-PLUGIN",
         ):
             with self.subTest(source=source):
                 self.assertIn(source, readme)
