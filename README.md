@@ -60,6 +60,17 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
    codex plugin marketplace remove YOUR-PLUGIN
    ```
 
+## Make a plugin available in ChatGPT
+
+A private workspace plugin is enough; a public Plugin Directory listing is optional. To make a plugin available in ChatGPT web or desktop:
+
+1. Confirm that the target workspace grants your role permission to use, share, or publish plugins.
+2. Create or import the plugin into that ChatGPT workspace using its available provisioning flow. The current ChatGPT documentation does not describe a GitHub repository import path, so a repository marketplace alone cannot perform this step.
+3. After the plugin exists as an owned workspace plugin, open `Plugins -> select the owned plugin -> ... -> Share plugin`.
+4. Choose invite-only access, a workspace link, or workspace-directory visibility. Workspace-directory visibility stays within the workspace and is not a global public listing.
+
+See [OpenAI's plugin sharing guide](https://help.openai.com/en/articles/20001256-plugins-in-chatgpt-and-codex) for workspace permissions and sharing controls.
+
 Generated repositories have independent histories and do not receive template updates automatically. Bring over later improvements deliberately, after reviewing them for your repository.
 
 ## Portable skills
