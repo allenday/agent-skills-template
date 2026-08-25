@@ -49,6 +49,11 @@ class RepositoryContractTests(unittest.TestCase):
         for path in ("AGENTS.md", "CONTRIBUTING.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
             self.assertTrue((ROOT / path).is_file(), path)
 
+    def test_ci_runs_unit_tests_and_validator(self):
+        workflow = (ROOT / ".github/workflows/validate.yml").read_text()
+        self.assertIn("python3 -m unittest discover -s tests -v", workflow)
+        self.assertIn("scripts/validate --format json", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
