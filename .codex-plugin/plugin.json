@@ -1,0 +1,22 @@
+{
+  "name": "agent-skills-template",
+  "version": "0.1.0",
+  "description": "A forkable monorepo template for portable Agent Skills",
+  "skills": "./skills/",
+  "author": {
+    "name": "Template Maintainers"
+  },
+  "interface": {
+    "displayName": "Agent Skills Template",
+    "shortDescription": "A portable Agent Skills repository template.",
+    "longDescription": "A neutral template for building, validating, and sharing portable Agent Skills.",
+    "developerName": "Template Maintainers",
+    "category": "Productivity",
+    "capabilities": [
+      "Portable Agent Skills"
+    ],
+    "defaultPrompt": [
+      "Help me create and validate a portable Agent Skill."
+    ]
+  }
+}

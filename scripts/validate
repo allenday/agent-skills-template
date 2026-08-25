@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class Finding:
+    severity: str
+    code: str
+    path: str
+    message: str
+
+
+FRONTMATTER = re.compile(r"\A---\n(?P<body>.*?)\n---(?:\n|\Z)", re.DOTALL)
+LINK = re.compile(r"\[[^\]]+\]\((?P<target>[^)]+)\)")
+REFERENCE_DEFINITION = re.compile(
+    r"(?m)^[ \t]{0,3}\[(?:[^\]\\]|\\.)+\]:[ \t]*(?P<target><[^>\n]*>|[^ \t\n]+)"
+)
+NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SEMVER = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\."
+    r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+INSTALLATION_POLICIES = {"NOT_AVAILABLE", "AVAILABLE", "INSTALLED_BY_DEFAULT"}
+AUTHENTICATION_POLICIES = {"ON_INSTALL", "ON_USE"}
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    match = FRONTMATTER.search(text)
+    if not match:
+        return {}
+    fields = {}
+    for line in match.group("body").splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            fields[key.strip()] = value.strip().strip('"').strip("'")
+    return fields
+
+
+def add(findings, severity, code, path, message):
+    findings.append(Finding(severity, code, path.as_posix(), message))
+
+
+def load_json(path: Path, findings, missing_code: str, invalid_code: str):
+    if not path.is_file():
+        add(findings, "error", missing_code, path, "required file is missing")
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        add(findings, "error", invalid_code, path, f"invalid JSON: {error}")
+        return None
+
+
+def is_within(path: Path, directory: Path) -> bool:
+    try:
+        path.relative_to(directory)
+    except ValueError:
+        return False
+    return True
+
+
+def is_nonblank_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_marketplace(root: Path, manifest: object, findings) -> None:
+    path = root / ".agents/plugins/marketplace.json"
+    marketplace = load_json(path, findings, "MARKETPLACE_MISSING", "MARKETPLACE_INVALID")
+    if not isinstance(marketplace, dict):
+        if marketplace is not None:
+            add(findings, "error", "MARKETPLACE_INVALID", path, "marketplace must be a JSON object")
+        return
+
+    marketplace_name = marketplace.get("name")
+    if not is_nonblank_string(marketplace_name):
+        add(findings, "error", "MARKETPLACE_NAME_MISSING", path, "marketplace name must be a nonblank string")
+    elif not NAME.fullmatch(marketplace_name):
+        add(findings, "error", "MARKETPLACE_NAME_INVALID", path, "marketplace name must be kebab-case")
+
+    manifest_name = manifest.get("name") if isinstance(manifest, dict) else None
+    plugins = marketplace.get("plugins")
+    if not isinstance(plugins, list):
+        add(findings, "error", "MARKETPLACE_INVALID", path, "plugins must be a list")
+        return
+
+    plugin = next(
+        (item for item in plugins if isinstance(item, dict) and item.get("name") == manifest_name),
+        None,
+    )
+    if not manifest_name or plugin is None:
+        add(findings, "error", "MARKETPLACE_PLUGIN_MISMATCH", path, "no plugin matches the manifest name")
+        return
+
+    if not isinstance(plugin.get("name"), str) or not NAME.fullmatch(plugin["name"]):
+        add(findings, "error", "MARKETPLACE_PLUGIN_NAME_INVALID", path, "plugin name must be kebab-case")
+
+    source = plugin.get("source")
+    if not isinstance(source, dict) or source.get("source") != "local" or source.get("path") != "./":
+        add(
+            findings,
+            "error",
+            "MARKETPLACE_SOURCE_PATH",
+            path,
+            "the root plugin source must be local and use path './'",
+        )
+
+    policy = plugin.get("policy")
+    if not isinstance(policy, dict):
+        add(findings, "error", "MARKETPLACE_POLICY_INVALID", path, "plugin policy must be an object")
+    else:
+        if not is_nonblank_string(policy.get("installation")):
+            add(
+                findings, "error", "MARKETPLACE_POLICY_INSTALLATION_MISSING", path,
+                "plugin policy installation must be a nonblank string",
+            )
+        elif policy["installation"] not in INSTALLATION_POLICIES:
+            add(
+                findings, "error", "MARKETPLACE_POLICY_INSTALLATION_INVALID", path,
+                "plugin policy installation must be NOT_AVAILABLE, AVAILABLE, or INSTALLED_BY_DEFAULT",
+            )
+        if not is_nonblank_string(policy.get("authentication")):
+            add(
+                findings, "error", "MARKETPLACE_POLICY_AUTHENTICATION_MISSING", path,
+                "plugin policy authentication must be a nonblank string",
+            )
+        elif policy["authentication"] not in AUTHENTICATION_POLICIES:
+            add(
+                findings, "error", "MARKETPLACE_POLICY_AUTHENTICATION_INVALID", path,
+                "plugin policy authentication must be ON_INSTALL or ON_USE",
+            )
+    if not is_nonblank_string(plugin.get("category")):
+        add(findings, "error", "MARKETPLACE_CATEGORY_MISSING", path, "plugin category must be a nonblank string")
+
+
+def validate_skill_assets(skill_dir: Path, findings) -> None:
+    skill_root = skill_dir.resolve()
+    for directory, dirs, files in os.walk(skill_dir, followlinks=False):
+        for name in dirs + files:
+            path = Path(directory) / name
+            if path.is_symlink():
+                add(findings, "error", "SKILL_ASSET_SYMLINK", path, "skill assets must not be symlinks")
+                if not is_within(path.resolve(), skill_root):
+                    add(findings, "error", "SKILL_ASSET_ESCAPES", path, "skill asset symlink resolves outside the skill directory")
+
+
+def validate_reference(target: str, skill_path: Path, skill_dir: Path, findings) -> None:
+    target = target.strip()
+    if not target or target.startswith(("http:", "https:", "mailto:", "#")):
+        return
+    target_path = target.split("#", 1)[0].split("?", 1)[0].strip("<>")
+    if not target_path:
+        return
+    candidate = (skill_path.parent / target_path).resolve()
+    if not is_within(candidate, skill_dir.resolve()):
+        add(findings, "error", "REFERENCE_ESCAPES_SKILL", skill_path, f"reference escapes skill: {target}")
+    elif not candidate.is_file():
+        add(findings, "error", "REFERENCE_MISSING", skill_path, f"reference is missing: {target}")
+
+
+def validate_skill(skill_dir: Path, findings) -> str | None:
+    skill_path = skill_dir / "SKILL.md"
+    validate_skill_assets(skill_dir, findings)
+    if skill_path.is_symlink():
+        add(findings, "error", "SKILL_FILE_SYMLINK", skill_path, "SKILL.md must not be a symlink")
+        return None
+    try:
+        text = skill_path.read_text()
+    except OSError:
+        add(findings, "error", "SKILL_FRONTMATTER_MISSING", skill_path, "SKILL.md frontmatter is required")
+        return None
+
+    frontmatter = parse_frontmatter(text)
+    if not frontmatter:
+        add(findings, "error", "SKILL_FRONTMATTER_MISSING", skill_path, "SKILL.md frontmatter is required")
+    name = frontmatter.get("name", "")
+    description = frontmatter.get("description", "")
+    if not NAME.fullmatch(name):
+        add(findings, "error", "SKILL_NAME_INVALID", skill_path, "frontmatter name must be kebab-case")
+    elif name != skill_dir.name:
+        add(findings, "error", "SKILL_NAME_MISMATCH", skill_path, "frontmatter name must match the skill directory")
+    if not description:
+        add(findings, "error", "SKILL_DESCRIPTION_MISSING", skill_path, "frontmatter description is required")
+    else:
+        if len(description) > 1024:
+            add(findings, "error", "SKILL_DESCRIPTION_TOO_LONG", skill_path, "description must be at most 1024 characters")
+        if "use when" not in description.lower():
+            add(findings, "error", "SKILL_DESCRIPTION_TRIGGER", skill_path, "description must include 'Use when'")
+    if len(text.splitlines()) > 500:
+        add(findings, "warning", "SKILL_TOO_LARGE", skill_path, "SKILL.md exceeds 500 lines")
+
+    for match in LINK.finditer(text):
+        validate_reference(match.group("target"), skill_path, skill_dir, findings)
+    for match in REFERENCE_DEFINITION.finditer(text):
+        validate_reference(match.group("target"), skill_path, skill_dir, findings)
+    return name if NAME.fullmatch(name) and name == skill_dir.name else None
+
+
+def validate_evals(root: Path, skill_names: set[str], findings) -> None:
+    evals_dir = root / "evals"
+    seen = set()
+    if evals_dir.is_dir():
+        for path in sorted(evals_dir.glob("*.json")):
+            seen.add(path.stem)
+            fixture = load_json(path, findings, "EVAL_INVALID", "EVAL_INVALID")
+            if not isinstance(fixture, dict):
+                if fixture is not None:
+                    add(findings, "error", "EVAL_INVALID", path, "eval fixture must be a JSON object")
+                continue
+            skill = fixture.get("skill")
+            if skill != path.stem:
+                add(findings, "error", "EVAL_SKILL_MISMATCH", path, "fixture skill must match the eval filename")
+            positive = fixture.get("positive")
+            negative = fixture.get("negative")
+            if not isinstance(positive, list) or len(positive) < 3:
+                add(findings, "error", "EVAL_POSITIVE_MIN", path, "eval fixture needs at least three positive prompts")
+            if not isinstance(negative, list) or len(negative) < 2:
+                add(findings, "error", "EVAL_NEGATIVE_MIN", path, "eval fixture needs at least two negative prompts")
+            for prompts in (positive, negative):
+                if not isinstance(prompts, list):
+                    continue
+                for prompt in prompts:
+                    if not is_nonblank_string(prompt):
+                        add(findings, "error", "EVAL_PROMPT_INVALID", path, "eval prompts must be nonblank strings")
+                    elif "REPLACE:" in prompt:
+                        add(findings, "error", "EVAL_PROMPT_PLACEHOLDER", path, "eval prompts must not contain placeholder text")
+            if path.stem not in skill_names:
+                add(findings, "error", "EVAL_ORPHAN", path, "eval fixture has no corresponding skill")
+
+    for name in sorted(skill_names - seen):
+        add(findings, "error", "EVAL_MISSING", evals_dir / f"{name}.json", "skill has no eval fixture")
+
+
+def validate(root: Path) -> list[Finding]:
+    findings = []
+    manifest_path = root / ".codex-plugin/plugin.json"
+    manifest = load_json(manifest_path, findings, "MANIFEST_MISSING", "MANIFEST_INVALID")
+    if isinstance(manifest, dict):
+        if not isinstance(manifest.get("name"), str) or not NAME.fullmatch(manifest["name"]):
+            add(findings, "error", "MANIFEST_NAME_INVALID", manifest_path, "name must be kebab-case")
+        version = manifest.get("version")
+        if not is_nonblank_string(version):
+            add(findings, "error", "MANIFEST_VERSION_MISSING", manifest_path, "version must be a nonblank string")
+        elif not SEMVER.fullmatch(version):
+            add(findings, "error", "MANIFEST_VERSION_INVALID", manifest_path, "version must be strict semver")
+        if not is_nonblank_string(manifest.get("description")):
+            add(findings, "error", "MANIFEST_DESCRIPTION_MISSING", manifest_path, "description must be a nonblank string")
+        if manifest.get("skills") != "./skills/":
+            add(findings, "error", "MANIFEST_SKILLS_PATH", manifest_path, "skills must be './skills/'")
+        author = manifest.get("author")
+        if not isinstance(author, dict):
+            add(findings, "error", "MANIFEST_AUTHOR_INVALID", manifest_path, "author must be an object")
+        elif not is_nonblank_string(author.get("name")):
+            add(findings, "error", "MANIFEST_AUTHOR_NAME_MISSING", manifest_path, "author.name must be a nonblank string")
+        interface = manifest.get("interface")
+        if not isinstance(interface, dict):
+            add(findings, "error", "MANIFEST_INTERFACE_INVALID", manifest_path, "interface must be an object")
+        else:
+            interface_fields = {
+                "displayName": "DISPLAY_NAME",
+                "shortDescription": "SHORT_DESCRIPTION",
+                "longDescription": "LONG_DESCRIPTION",
+                "developerName": "DEVELOPER_NAME",
+                "category": "CATEGORY",
+            }
+            for field, code_name in interface_fields.items():
+                if not is_nonblank_string(interface.get(field)):
+                    add(findings, "error", f"MANIFEST_INTERFACE_{code_name}_MISSING", manifest_path,
+                        f"interface.{field} must be a nonblank string")
+            capabilities = interface.get("capabilities")
+            if not isinstance(capabilities, list) or not capabilities or not all(is_nonblank_string(value) for value in capabilities):
+                add(findings, "error", "MANIFEST_INTERFACE_CAPABILITIES_INVALID", manifest_path,
+                    "interface.capabilities must be a nonempty list of nonblank strings")
+            prompts = [interface[field] for field in ("defaultPrompt", "default_prompt") if field in interface]
+            if not prompts or not all(
+                isinstance(prompt, list) and prompt and all(is_nonblank_string(value) for value in prompt)
+                for prompt in prompts
+            ):
+                add(findings, "error", "MANIFEST_INTERFACE_DEFAULT_PROMPT_INVALID", manifest_path,
+                    "interface.defaultPrompt or interface.default_prompt must be a nonempty list of nonblank strings")
+    elif manifest is not None:
+        add(findings, "error", "MANIFEST_INVALID", manifest_path, "manifest must be a JSON object")
+
+    validate_marketplace(root, manifest, findings)
+
+    skill_names = set()
+    skills_dir = root / "skills"
+    if skills_dir.is_symlink():
+        add(findings, "error", "SKILLS_ROOT_SYMLINK", skills_dir, "skills directory must not be a symlink")
+    elif skills_dir.is_dir():
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if skill_dir.is_symlink():
+                add(findings, "error", "SKILL_DIRECTORY_SYMLINK", skill_dir, "skill directories must not be symlinks")
+                continue
+            if not skill_dir.is_dir():
+                continue
+            name = validate_skill(skill_dir, findings)
+            if name:
+                skill_names.add(name)
+
+    validate_evals(root, skill_names, findings)
+    return sorted(findings, key=lambda item: (item.severity, item.path, item.code, item.message))
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Validate an Agent Skills monorepo")
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--format", choices=("human", "json"), default="human")
+    args = parser.parse_args(argv)
+    findings = validate(args.root.resolve())
+    errors = sum(f.severity == "error" for f in findings)
+    warnings = sum(f.severity == "warning" for f in findings)
+    if args.format == "json":
+        print(json.dumps({
+            "ok": errors == 0,
+            "summary": {"errors": errors, "warnings": warnings},
+            "findings": [asdict(f) for f in findings],
+        }, indent=2, sort_keys=True))
+    else:
+        for finding in findings:
+            print(f"{finding.severity.upper()} {finding.code} {finding.path}: {finding.message}")
+        print(f"Validation complete: {errors} error(s), {warnings} warning(s)")
+    return 0 if errors == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Scaffold a portable Agent Skill and its trigger-evaluation fixture."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+
+NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+DESCRIPTION = "Describe what this skill does. Use when the user asks for its specific workflow."
+
+
+def title_for(name: str) -> str:
+    return " ".join(part.capitalize() for part in name.split("-"))
+
+
+def skill_body(name: str) -> str:
+    return f"""---
+name: {name}
+description: {DESCRIPTION}
+---
+
+# {title_for(name)}
+
+## Workflow
+
+1. Confirm the workflow input and desired output.
+2. Follow the project-specific source of truth.
+3. Produce the requested result.
+4. Verify the result before reporting completion.
+"""
+
+
+def eval_fixture(name: str) -> str:
+    return json.dumps(
+        {
+            "skill": name,
+            "positive": [
+                "REPLACE: positive trigger prompt 1",
+                "REPLACE: positive trigger prompt 2",
+                "REPLACE: positive trigger prompt 3",
+            ],
+            "negative": [
+                "REPLACE: negative trigger prompt 1",
+                "REPLACE: negative trigger prompt 2",
+            ],
+        },
+        indent=2,
+    ) + "\n"
+
+
+def exists_or_is_symlink(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Scaffold a portable Agent Skill")
+    parser.add_argument("name", help="kebab-case skill name")
+    parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository root")
+    args = parser.parse_args(argv)
+
+    if not NAME.fullmatch(args.name):
+        print("error: skill name must be kebab-case", file=sys.stderr)
+        return 2
+
+    root = args.root.resolve()
+    skills_dir = root / "skills"
+    evals_dir = root / "evals"
+    for directory in (skills_dir, evals_dir):
+        if exists_or_is_symlink(directory) and (directory.is_symlink() or not directory.is_dir()):
+            print(f"error: refusing to use unsafe target directory: {directory}", file=sys.stderr)
+            return 3
+
+    skill_dir = skills_dir / args.name
+    skill_path = skill_dir / "SKILL.md"
+    reference_dir = skill_dir / "references"
+    gitkeep_path = reference_dir / ".gitkeep"
+    eval_path = evals_dir / f"{args.name}.json"
+    targets = (skill_dir, skill_path, reference_dir, gitkeep_path, eval_path)
+    existing = next((path for path in targets if exists_or_is_symlink(path)), None)
+    if existing is not None:
+        print(f"error: refusing to overwrite existing target: {existing}", file=sys.stderr)
+        return 3
+
+    skill_dir.mkdir(parents=True)
+    reference_dir.mkdir()
+    skill_path.write_text(skill_body(args.name))
+    gitkeep_path.touch()
+    evals_dir.mkdir(parents=True, exist_ok=True)
+    eval_path.write_text(eval_fixture(args.name))
+
+    for path in (skill_path, gitkeep_path, eval_path):
+        print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

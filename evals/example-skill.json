@@ -1,0 +1,12 @@
+{
+  "skill": "example-skill",
+  "positive": [
+    "Test the example skill in this template.",
+    "Show me how this repository's sample skill loads a reference.",
+    "Verify that the example Agent Skill is discoverable."
+  ],
+  "negative": [
+    "Write documentation for my API.",
+    "Design a command-line interface."
+  ]
+}
