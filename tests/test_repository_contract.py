@@ -38,6 +38,17 @@ class RepositoryContractTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_readme_documents_the_actual_commands(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("scripts/new-skill", readme)
+        self.assertIn("scripts/validate", readme)
+        self.assertIn("codex plugin marketplace add", readme)
+        self.assertIn("Use this template", readme)
+
+    def test_governance_files_exist(self):
+        for path in ("AGENTS.md", "CONTRIBUTING.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+            self.assertTrue((ROOT / path).is_file(), path)
+
 
 if __name__ == "__main__":
     unittest.main()
