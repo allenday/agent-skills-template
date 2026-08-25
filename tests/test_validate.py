@@ -136,45 +136,24 @@ class ValidatorTests(unittest.TestCase):
                 "reference escapes skill: ../../outside.md",
             })
 
-    def test_portability_guard_rejects_unparsed_local_reference_forms(self):
+    def test_validator_does_not_parse_arbitrary_markdown_link_forms(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             write_repo(root)
             skill = root / "skills/sample-skill/SKILL.md"
             original = skill.read_text()
             cases = {
-                "empty image label": "![](../outside.png)\n",
-                "nested image label": "![nested [label]](../outside.png)\n",
-                "omitted image reference label": "![][local-image]\n[local-image]: ../outside.png\n",
-                "reference-definition image file URL": (
-                    "![Reference image][local-image]\n"
-                    "[local-image]: file:///tmp/outside.png\n"
-                ),
-                "absolute image destination": "![Absolute](/tmp/outside.png)\n",
+                "ordinary prose": "Open the file: then continue.\n",
+                "fragment": "[Settings](#/settings/profile)\n",
+                "balanced remote URL": "[Guide](https://example.com/docs_(v1)/intro)\n",
+                "non-ascii prose": "สถานะเปิด/ปิด\n",
             }
 
             for form, markdown in cases.items():
                 with self.subTest(form=form):
                     skill.write_text(original + "\n" + markdown)
                     codes = {finding.code for finding in self.validator.validate(root)}
-                    self.assertIn("SKILL_MARKDOWN_PORTABILITY_ESCAPE", codes)
-
-    def test_portability_guard_allows_remote_urls_and_anchors(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            write_repo(root)
-            skill = root / "skills/sample-skill/SKILL.md"
-            skill.write_text(
-                skill.read_text()
-                + "\n# Details\n"
-                + "[Guide](https://example.com/guides/../portable)\n"
-                + "[Contact](mailto:guide@example.com)\n"
-                + "[Details](#details)\n"
-            )
-
-            codes = {finding.code for finding in self.validator.validate(root)}
-
-            self.assertNotIn("SKILL_MARKDOWN_PORTABILITY_ESCAPE", codes)
+                    self.assertNotIn("SKILL_MARKDOWN_PORTABILITY_ESCAPE", codes)
 
     def test_invalid_marketplace_source_fails(self):
         with tempfile.TemporaryDirectory() as directory:

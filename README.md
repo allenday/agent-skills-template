@@ -33,7 +33,7 @@ Each skill is independently extractable: copy one complete `skills/<name>/` dire
 ## Repository commands
 
 - `scripts/new-skill <name>` creates a portable skill directory and its eval fixture.
-- `scripts/validate` checks the plugin, marketplace, skills, references, and eval contract without installing dependencies.
+- `scripts/validate` checks the plugin, marketplace, skills, common local references, and eval contract without installing dependencies. It is not a full Markdown parser; keep every runtime file inside its owning skill directory.
 - `python3 -m unittest discover -s tests -v` runs the repository test suite.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution contract and [AGENTS.md](AGENTS.md) for agent guidance.
