@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import asdict, dataclass
@@ -57,6 +58,10 @@ def is_within(path: Path, directory: Path) -> bool:
     return True
 
 
+def is_nonblank_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def validate_marketplace(root: Path, manifest: object, findings) -> None:
     path = root / ".agents/plugins/marketplace.json"
     marketplace = load_json(path, findings, "MARKETPLACE_MISSING", "MARKETPLACE_INVALID")
@@ -64,6 +69,9 @@ def validate_marketplace(root: Path, manifest: object, findings) -> None:
         if marketplace is not None:
             add(findings, "error", "MARKETPLACE_INVALID", path, "marketplace must be a JSON object")
         return
+
+    if not is_nonblank_string(marketplace.get("name")):
+        add(findings, "error", "MARKETPLACE_NAME_MISSING", path, "marketplace name must be a nonblank string")
 
     manifest_name = manifest.get("name") if isinstance(manifest, dict) else None
     plugins = marketplace.get("plugins")
@@ -79,6 +87,9 @@ def validate_marketplace(root: Path, manifest: object, findings) -> None:
         add(findings, "error", "MARKETPLACE_PLUGIN_MISMATCH", path, "no plugin matches the manifest name")
         return
 
+    if not isinstance(plugin.get("name"), str) or not NAME.fullmatch(plugin["name"]):
+        add(findings, "error", "MARKETPLACE_PLUGIN_NAME_INVALID", path, "plugin name must be kebab-case")
+
     source = plugin.get("source")
     if not isinstance(source, dict) or source.get("source") != "local" or source.get("path") != "./":
         add(
@@ -89,9 +100,43 @@ def validate_marketplace(root: Path, manifest: object, findings) -> None:
             "the root plugin source must be local and use path './'",
         )
 
+    policy = plugin.get("policy")
+    if not isinstance(policy, dict):
+        add(findings, "error", "MARKETPLACE_POLICY_INVALID", path, "plugin policy must be an object")
+    else:
+        if not is_nonblank_string(policy.get("installation")):
+            add(
+                findings, "error", "MARKETPLACE_POLICY_INSTALLATION_MISSING", path,
+                "plugin policy installation must be a nonblank string",
+            )
+        if not is_nonblank_string(policy.get("authentication")):
+            add(
+                findings, "error", "MARKETPLACE_POLICY_AUTHENTICATION_MISSING", path,
+                "plugin policy authentication must be a nonblank string",
+            )
+    if not is_nonblank_string(plugin.get("category")):
+        add(findings, "error", "MARKETPLACE_CATEGORY_MISSING", path, "plugin category must be a nonblank string")
+
+
+def validate_skill_assets(skill_dir: Path, findings) -> None:
+    skill_root = skill_dir.resolve()
+    for directory, dirs, files in os.walk(skill_dir, followlinks=False):
+        for name in dirs + files:
+            path = Path(directory) / name
+            if path.name == "SKILL.md":
+                continue
+            if path.is_symlink():
+                add(findings, "error", "SKILL_ASSET_SYMLINK", path, "skill assets must not be symlinks")
+                if not is_within(path.resolve(), skill_root):
+                    add(findings, "error", "SKILL_ASSET_ESCAPES", path, "skill asset symlink resolves outside the skill directory")
+
 
 def validate_skill(skill_dir: Path, findings) -> str | None:
     skill_path = skill_dir / "SKILL.md"
+    validate_skill_assets(skill_dir, findings)
+    if skill_path.is_symlink():
+        add(findings, "error", "SKILL_FILE_SYMLINK", skill_path, "SKILL.md must not be a symlink")
+        return None
     try:
         text = skill_path.read_text()
     except OSError:
@@ -154,6 +199,14 @@ def validate_evals(root: Path, skill_names: set[str], findings) -> None:
                 add(findings, "error", "EVAL_POSITIVE_MIN", path, "eval fixture needs at least three positive prompts")
             if not isinstance(negative, list) or len(negative) < 2:
                 add(findings, "error", "EVAL_NEGATIVE_MIN", path, "eval fixture needs at least two negative prompts")
+            for prompts in (positive, negative):
+                if not isinstance(prompts, list):
+                    continue
+                for prompt in prompts:
+                    if not is_nonblank_string(prompt):
+                        add(findings, "error", "EVAL_PROMPT_INVALID", path, "eval prompts must be nonblank strings")
+                    elif "REPLACE:" in prompt:
+                        add(findings, "error", "EVAL_PROMPT_PLACEHOLDER", path, "eval prompts must not contain placeholder text")
             if path.stem not in skill_names:
                 add(findings, "error", "EVAL_ORPHAN", path, "eval fixture has no corresponding skill")
 
@@ -166,6 +219,12 @@ def validate(root: Path) -> list[Finding]:
     manifest_path = root / ".codex-plugin/plugin.json"
     manifest = load_json(manifest_path, findings, "MANIFEST_MISSING", "MANIFEST_INVALID")
     if isinstance(manifest, dict):
+        if not isinstance(manifest.get("name"), str) or not NAME.fullmatch(manifest["name"]):
+            add(findings, "error", "MANIFEST_NAME_INVALID", manifest_path, "name must be kebab-case")
+        if not is_nonblank_string(manifest.get("version")):
+            add(findings, "error", "MANIFEST_VERSION_MISSING", manifest_path, "version must be a nonblank string")
+        if not is_nonblank_string(manifest.get("description")):
+            add(findings, "error", "MANIFEST_DESCRIPTION_MISSING", manifest_path, "description must be a nonblank string")
         if manifest.get("skills") != "./skills/":
             add(findings, "error", "MANIFEST_SKILLS_PATH", manifest_path, "skills must be './skills/'")
     elif manifest is not None:
@@ -176,7 +235,12 @@ def validate(root: Path) -> list[Finding]:
     skill_names = set()
     skills_dir = root / "skills"
     if skills_dir.is_dir():
-        for skill_dir in sorted(path for path in skills_dir.iterdir() if path.is_dir()):
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if skill_dir.is_symlink():
+                add(findings, "error", "SKILL_DIRECTORY_SYMLINK", skill_dir, "skill directories must not be symlinks")
+                continue
+            if not skill_dir.is_dir():
+                continue
             name = validate_skill(skill_dir, findings)
             if name:
                 skill_names.add(name)
