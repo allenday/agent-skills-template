@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -27,6 +28,15 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual(fixture["skill"], "example-skill")
         self.assertGreaterEqual(len(fixture["positive"]), 3)
         self.assertGreaterEqual(len(fixture["negative"]), 2)
+
+    def test_repository_validator_passes(self):
+        completed = subprocess.run(
+            [str(ROOT / "scripts/validate"), "--root", str(ROOT), "--format", "json"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":
