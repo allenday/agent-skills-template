@@ -60,6 +60,17 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
    codex plugin marketplace remove YOUR-PLUGIN
    ```
 
+## Update a plugin in Codex
+
+After a new version is available in the Git repository, refresh the configured marketplace, then reinstall the plugin from its refreshed snapshot:
+
+```sh
+codex plugin marketplace upgrade YOUR-PLUGIN
+codex plugin add YOUR-PLUGIN@YOUR-PLUGIN
+```
+
+Start a new Codex session after the reinstall.
+
 ## Make a plugin available in ChatGPT
 
 A private workspace plugin is enough; a public Plugin Directory listing is optional. To make a plugin available in ChatGPT web or desktop:

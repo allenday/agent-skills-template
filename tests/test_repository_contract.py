@@ -51,6 +51,8 @@ class RepositoryContractTests(unittest.TestCase):
             "codex plugin marketplace add /absolute/path/to/REPOSITORY",
             "codex plugin marketplace list",
             "codex plugin add YOUR-PLUGIN@YOUR-PLUGIN",
+            "## Update a plugin in Codex",
+            "codex plugin marketplace upgrade YOUR-PLUGIN",
             "codex plugin remove YOUR-PLUGIN@YOUR-PLUGIN",
             "codex plugin marketplace remove YOUR-PLUGIN",
             "does not upload the plugin to ChatGPT or the ChatGPT Plugin Directory",
