@@ -49,9 +49,7 @@ A forkable template for portable Agent Skills. The repository root is a skills-o
    codex plugin add YOUR-PLUGIN@YOUR-PLUGIN
    ```
 
-   Start a fresh Codex session after installing the plugin so it can discover the skills.
-
-   The GitHub marketplace installs the plugin only into the Codex environment where you ran the commands. It does not upload the plugin to ChatGPT or the ChatGPT Plugin Directory. In a new Codex session, ask for a task that matches a skill; Codex selects and applies matching skills automatically.
+   Continue with [Verify and use the installed plugin](#verify-and-use-the-installed-plugin) before relying on the skills in a new session.
 
 9. To remove the plugin later, remove the installed plugin first, then the marketplace source:
 
@@ -71,16 +69,40 @@ codex plugin add YOUR-PLUGIN@YOUR-PLUGIN
 
 Start a new Codex session after the reinstall.
 
+## Verify and use the installed plugin
+
+Verify the plugin's state on the same host where you installed it:
+
+```sh
+codex plugin list --marketplace YOUR-PLUGIN
+```
+
+`YOUR-PLUGIN@YOUR-PLUGIN` must show `installed, enabled`. If it is disabled, enable it from the interactive plugin browser:
+
+```text
+codex
+/plugins
+```
+
+Select the plugin and press Space, then exit and start a new `codex` session. A newly installed or enabled plugin is available only to new sessions.
+
+Ask for a matching task and Codex can select the relevant skill automatically. To select a skill deliberately, use `/skills` or type its `$` invocation in a Codex session:
+
+```text
+$YOUR-SKILL
+```
+
+If the plugin is enabled but a skill is not in the initial list, use `/skills` or its `$` invocation. Codex limits the initial skill list when many skills are installed; that is a discovery limit, not proof that installation failed.
+
 ## Make a plugin available in ChatGPT
 
-A private workspace plugin is enough; a public Plugin Directory listing is optional. To make a plugin available in ChatGPT web or desktop:
+Git marketplace installation is local to the Codex host where you ran the commands. Installing the plugin on one remote host does not sync the plugin into ChatGPT on your desktop, web, or another host.
 
-1. Confirm that the target workspace grants your role permission to use, share, or publish plugins.
-2. Create or import the plugin into that ChatGPT workspace using its available provisioning flow. The current ChatGPT documentation does not describe a GitHub repository import path, so a repository marketplace alone cannot perform this step.
-3. After the plugin exists as an owned workspace plugin, open `Plugins -> select the owned plugin -> ... -> Share plugin`.
-4. Choose invite-only access, a workspace link, or workspace-directory visibility. Workspace-directory visibility stays within the workspace and is not a global public listing.
+To use a plugin natively in ChatGPT, open **Plugins** in the intended ChatGPT account or workspace and install it from the **Plugins Directory**. To make your own plugin available there, follow the official plugin packaging, testing, and publishing flow; a local Git marketplace is useful for host-local development and testing, but does not itself create a Plugins Directory listing.
 
-See [OpenAI's plugin sharing guide](https://help.openai.com/en/articles/20001256-plugins-in-chatgpt-and-codex) for workspace permissions and sharing controls.
+Availability depends on the account, workspace, role, supported surface, and rollout. After installation in ChatGPT, start a new chat and invoke the plugin or bundled skill from the prompt controls.
+
+See [using plugins](https://learn.chatgpt.com/docs/plugins), [building skills](https://learn.chatgpt.com/docs/build-skills), and [testing/publishing plugins](https://developers.openai.com/plugins/deploy/connect-chatgpt) for the current product flow.
 
 Generated repositories have independent histories and do not receive template updates automatically. Bring over later improvements deliberately, after reviewing them for your repository.
 

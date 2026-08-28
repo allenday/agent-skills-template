@@ -53,13 +53,17 @@ class RepositoryContractTests(unittest.TestCase):
             "codex plugin add YOUR-PLUGIN@YOUR-PLUGIN",
             "## Update a plugin in Codex",
             "codex plugin marketplace upgrade YOUR-PLUGIN",
+            "## Verify and use the installed plugin",
+            "installed, enabled",
+            "codex plugin list --marketplace YOUR-PLUGIN",
+            "$YOUR-SKILL",
+            "/skills",
+            "does not sync the plugin into ChatGPT",
             "codex plugin remove YOUR-PLUGIN@YOUR-PLUGIN",
             "codex plugin marketplace remove YOUR-PLUGIN",
-            "does not upload the plugin to ChatGPT or the ChatGPT Plugin Directory",
-            "Codex selects and applies matching skills automatically",
-            "A private workspace plugin is enough; a public Plugin Directory listing is optional",
-            "The current ChatGPT documentation does not describe a GitHub repository import path",
-            "Plugins -> select the owned plugin -> ... -> Share plugin",
+            "Codex can select the relevant skill automatically",
+            "Git marketplace installation is local to the Codex host",
+            "Plugins Directory",
         ):
             with self.subTest(source=source):
                 self.assertIn(source, readme)
